@@ -1,2 +1,6 @@
-﻿gitpython
+﻿
+gitpython
 pytest
+streamlit
+pandas
+plotly
