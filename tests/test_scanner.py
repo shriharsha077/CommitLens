@@ -1,4 +1,4 @@
-﻿"""
+"""
 test_scanner.py - Tests for the CommitLens repository scanner.
 
 We create temporary Git repositories during each test, run scan_repo()
@@ -164,3 +164,59 @@ class TestScanRepo:
         assert not_a_repo in error_message
         # The error message should suggest running 'git init'
         assert "git init" in error_message
+
+    def test_commit_with_utf8_and_non_ascii_characters(self):
+        """Commits with non-ASCII UTF-8 characters, emojis, and special chars should not fail decoding."""
+        repo_dir = tempfile.mkdtemp(prefix="commitlens_utf8_")
+        subprocess.run(["git", "init"], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.name", "René Déscartes ✨"],
+            cwd=repo_dir, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "rene@commitlens.dev"],
+            cwd=repo_dir, check=True, capture_output=True,
+        )
+
+        file_path = os.path.join(repo_dir, "file.txt")
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write("UTF-8 content: \u009d \u2014 \U0001F680")
+
+        subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Commit with UTF-8: \u009d — \U0001F680 sparkles ✨"],
+            cwd=repo_dir, check=True, capture_output=True,
+        )
+
+        results = scan_repo(repo_dir)
+        assert len(results) == 1
+        assert "✨" in results[0]["author"] or "Ren" in results[0]["author"]
+        assert results[0]["message"] is not None
+        assert len(results[0]["message"]) > 0
+
+    def test_commit_with_empty_message(self):
+        """Commits with empty message should be parsed safely with empty string."""
+        repo_dir = tempfile.mkdtemp(prefix="commitlens_empty_msg_")
+        subprocess.run(["git", "init"], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.name", TEST_AUTHOR_NAME],
+            cwd=repo_dir, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", TEST_AUTHOR_EMAIL],
+            cwd=repo_dir, check=True, capture_output=True,
+        )
+
+        file_path = os.path.join(repo_dir, "empty.txt")
+        with open(file_path, "w") as f:
+            f.write("content")
+
+        subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "--allow-empty-message", "-m", ""],
+            cwd=repo_dir, check=True, capture_output=True,
+        )
+
+        results = scan_repo(repo_dir)
+        assert len(results) == 1
+        assert results[0]["message"] == ""

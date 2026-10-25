@@ -302,9 +302,9 @@ def analyze_repository(repo_path: str):
         df_commits["short_hash"] = df_commits["hash"].str[:7]
 
         # Datetime processing
-        df_commits["datetime"] = pd.to_datetime(df_commits["date"])
-        df_commits["formatted_date"] = df_commits["datetime"].dt.strftime("%Y-%m-%d %H:%M")
-        df_commits["date_only"] = df_commits["datetime"].dt.date
+        df_commits["datetime"] = pd.to_datetime(df_commits["date"], utc=True)
+        df_commits["formatted_date"] = df_commits["datetime"].dt.tz_convert(None).dt.strftime("%Y-%m-%d %H:%M")
+        df_commits["date_only"] = df_commits["datetime"].dt.tz_convert(None).dt.date
     else:
         df_commits = pd.DataFrame(
             columns=[
