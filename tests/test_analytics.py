@@ -249,6 +249,92 @@ class TestFileChangeFrequency:
         assert "image.bin" in result
         assert result["image.bin"] == 1
 
+    def test_renamed_and_modified_in_same_commit(self):
+        """A file renamed and another modified in the same commit."""
+        repo_dir = tempfile.mkdtemp(prefix="commitlens_analytics_")
+        _run_git(repo_dir, "init")
+        _run_git(repo_dir, "config", "user.name", TEST_AUTHOR_NAME)
+        _run_git(repo_dir, "config", "user.email", TEST_AUTHOR_EMAIL)
+
+        # Commit 1: create two files
+        for name in ("alpha.txt", "beta.txt"):
+            with open(os.path.join(repo_dir, name), "w") as f:
+                f.write(f"{name} content\n")
+        _run_git(repo_dir, "add", ".")
+        _run_git(repo_dir, "commit", "-m", "Add alpha and beta")
+
+        # Commit 2: rename alpha → gamma, modify beta
+        _run_git(repo_dir, "mv", "alpha.txt", "gamma.txt")
+        with open(os.path.join(repo_dir, "beta.txt"), "w") as f:
+            f.write("beta updated\n")
+        _run_git(repo_dir, "add", ".")
+        _run_git(repo_dir, "commit", "-m", "Rename alpha and modify beta")
+
+        result = file_change_frequency(repo_dir)
+        # Creation commit: alpha.txt=1, beta.txt=1
+        # Rename+modify commit: gamma.txt=1 (rename), beta.txt gets +1
+        assert result.get("alpha.txt") == 1
+        assert result.get("beta.txt") == 2
+        assert result.get("gamma.txt") == 1
+
+    def test_mixed_add_modify_delete_in_single_commit(self):
+        """A commit that adds, modifies, and deletes files simultaneously."""
+        repo_dir = tempfile.mkdtemp(prefix="commitlens_analytics_")
+        _run_git(repo_dir, "init")
+        _run_git(repo_dir, "config", "user.name", TEST_AUTHOR_NAME)
+        _run_git(repo_dir, "config", "user.email", TEST_AUTHOR_EMAIL)
+
+        # Commit 1: create keep.txt and remove_me.txt
+        for name in ("keep.txt", "remove_me.txt"):
+            with open(os.path.join(repo_dir, name), "w") as f:
+                f.write(f"Initial {name}\n")
+        _run_git(repo_dir, "add", ".")
+        _run_git(repo_dir, "commit", "-m", "Initial files")
+
+        # Commit 2: modify keep.txt, delete remove_me.txt, add new.txt
+        with open(os.path.join(repo_dir, "keep.txt"), "w") as f:
+            f.write("Modified content\n")
+        os.remove(os.path.join(repo_dir, "remove_me.txt"))
+        with open(os.path.join(repo_dir, "new.txt"), "w") as f:
+            f.write("Brand new file\n")
+        _run_git(repo_dir, "add", "-A", ".")
+        _run_git(repo_dir, "commit", "-m", "Mixed operations")
+
+        result = file_change_frequency(repo_dir)
+        assert result["keep.txt"] == 2       # created + modified
+        assert result["remove_me.txt"] == 2  # created + deleted
+        assert result["new.txt"] == 1        # added
+
+    def test_nonexistent_path_raises_file_not_found(self):
+        """Passing a non-existent path should raise FileNotFoundError."""
+        with pytest.raises(FileNotFoundError):
+            file_change_frequency("/tmp/does_not_exist_at_all")
+
+    def test_non_repo_raises_value_error(self):
+        """Passing a regular directory (not a repo) should raise ValueError."""
+        plain_dir = tempfile.mkdtemp(prefix="commitlens_analytics_")
+        with pytest.raises(ValueError):
+            file_change_frequency(plain_dir)
+
+    def test_many_files_in_root_commit(self):
+        """Root commit with many files should count all of them."""
+        repo_dir = tempfile.mkdtemp(prefix="commitlens_analytics_")
+        _run_git(repo_dir, "init")
+        _run_git(repo_dir, "config", "user.name", TEST_AUTHOR_NAME)
+        _run_git(repo_dir, "config", "user.email", TEST_AUTHOR_EMAIL)
+
+        # Create 20 files in one commit
+        for i in range(20):
+            with open(os.path.join(repo_dir, f"bulk_{i}.txt"), "w") as f:
+                f.write(f"File {i}\n")
+        _run_git(repo_dir, "add", ".")
+        _run_git(repo_dir, "commit", "-m", "Bulk add 20 files")
+
+        result = file_change_frequency(repo_dir)
+        assert len(result) == 20
+        for i in range(20):
+            assert result[f"bulk_{i}.txt"] == 1
+
 
 # ===========================================================================
 # Tests for lines_changed()
